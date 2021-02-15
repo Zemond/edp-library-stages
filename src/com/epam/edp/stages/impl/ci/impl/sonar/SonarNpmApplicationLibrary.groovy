@@ -28,8 +28,8 @@ class SonarNpmApplicationLibrary {
         script.dir("${workDir}") {
             script.withSonarQubeEnv('Sonar') {
                 script.sh "${scannerHome}/bin/sonar-scanner " +
-                        "-Dsonar.projectKey=${sonarProjectName} " +
-                        "-Dsonar.projectName=${sonarProjectName} "
+                        "-Dsonar.projectKey=${codebaseName} " +
+                        "-Dsonar.projectName=${codebaseName} "
             }
 
         }
