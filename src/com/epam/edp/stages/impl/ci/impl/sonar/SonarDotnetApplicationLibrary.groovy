@@ -28,7 +28,7 @@ class SonarDotnetApplicationLibrary {
         def scannerHome = script.tool 'SonarScannerMSBuild'
         script.dir("${workDir}") {
             script.withSonarQubeEnv('Sonar') {
-                script.sh "${scannerHome}sonar-scanner-3.2.0.1227/bin/sonar-scanner " +
+                script.sh "${scannerHome}/sonar-scanner-3.2.0.1227/bin/sonar-scanner " +
                         "-Dsonar.projectKey=${codebaseName} " +
                         "-Dsonar.projectName=${codebaseName} "
             }
