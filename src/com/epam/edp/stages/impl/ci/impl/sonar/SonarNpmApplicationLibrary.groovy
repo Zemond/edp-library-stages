@@ -23,13 +23,15 @@ class SonarNpmApplicationLibrary {
 
     Script script
 
-    def sendSonarScan(sonarProjectName, codereviewAnalysisRunDir, scannerHome) {
-        script.dir("${codereviewAnalysisRunDir}") {
+    def sendSonarScan(workDir, codebaseName) {
+        def scannerHome = script.tool 'SonarQube Scanner'
+        script.dir("${workDir}") {
             script.withSonarQubeEnv('Sonar') {
                 script.sh "${scannerHome}/bin/sonar-scanner " +
                         "-Dsonar.projectKey=${sonarProjectName} " +
                         "-Dsonar.projectName=${sonarProjectName} "
             }
+
         }
     }
 
