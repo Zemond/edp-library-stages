@@ -30,7 +30,7 @@ class SonarGradleApplicationLibrary {
             script.withSonarQubeEnv('Sonar') {
                 script.sh "${scannerHome}/bin/sonar-scanner " +
                         "-Dsonar.projectKey=${codebaseName} " +
-                        "-Dsonar.projectName=${codebaseName} " +
+                        "-Dsonar.projectName=${codebaseName} "
             }
 
         }
