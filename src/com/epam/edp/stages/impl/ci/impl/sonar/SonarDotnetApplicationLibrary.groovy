@@ -24,18 +24,13 @@ class SonarDotnetApplicationLibrary {
 
     Script script
 
-    def sendSonarScan(workDir, codebaseName, scannerCommand, buildTool) {
-        def scannerHomePath = script.tool 'SonarScannerMSBuild'
+    def sendSonarScan(workDir, codebaseName) {
+        def scannerHome = script.tool 'SonarScannerMSBuild'
         script.dir("${workDir}") {
             script.withSonarQubeEnv('Sonar') {
-                script.sh """
-                     ${scannerCommand} begin /k:${codebaseName} \
-                     /k:${codebaseName} \
-                     /n:${codebaseName} \
-                     /d:sonar.cs.opencover.reportsPaths=${workDir}/*Tests*/*.xml
-                     dotnet build ${buildTool.sln_filename}
-                     ${scannerCommand} end
-                 """
+                script.sh "${scannerHome}/bin/sonar-scanner " +
+                        "-Dsonar.projectKey=${codebaseName} " +
+                        "-Dsonar.projectName=${codebaseName} "
             }
         }
     }
