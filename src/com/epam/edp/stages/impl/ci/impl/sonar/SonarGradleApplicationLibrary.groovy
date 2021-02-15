@@ -26,18 +26,13 @@ class SonarGradleApplicationLibrary {
 
     def sendSonarScan(workDir, codebaseName) {
         def scannerHome = script.tool 'SonarQube Scanner'
-        script.withCredentials([script.usernamePassword(credentialsId: "${credentialsId}",
-                passwordVariable: 'PASSWORD', usernameVariable: 'USERNAME')]) {
             script.dir("${workDir}") {
                 script.withSonarQubeEnv('Sonar') {
-                    script.sh "${buildTool.command} -PnexusLogin=${script.USERNAME} " +
-                            "-PnexusPassword=${script.PASSWORD} " +
-                            "sonarqube -Dsonar.projectKey=${codebaseName} " +
+                    script.sh "${scannerHome}/bin/sonar-scanner " +
+                            "-Dsonar.projectKey=${codebaseName} " +
                             "-Dsonar.projectName=${codebaseName} "
                 }
-
             }
-        }
     }
 
     def waitForQualityGate() {
