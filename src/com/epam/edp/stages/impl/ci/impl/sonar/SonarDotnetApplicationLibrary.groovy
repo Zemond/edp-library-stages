@@ -21,85 +21,100 @@ import com.epam.edp.stages.impl.ci.impl.sonarcleanup.SonarCleanupApplicationLibr
 
 @Stage(name = "sonar", buildTool = ["dotnet"], type = [ProjectType.APPLICATION, ProjectType.LIBRARY])
 class SonarDotnetApplicationLibrary {
-    def getSonarReportJson(context, codereviewAnalysisRunDir) {
-        String sonarAnalysisStatus
-        def sonarReportMap = script.readProperties file: "${codereviewAnalysisRunDir}/.sonarqube/out/.sonar/report-task.txt"
-        def sonarJsonReportLink = "${context.sonar.route}/api/issues/search?componentKeys=${context.codebase.name}:change-${context.git.changeNumber}-${context.git.patchsetNumber}&branch=${context.git.branch}&resolved=false&facets=severities"
 
-        script.println("[JENKINS][DEBUG] Waiting for report from Sonar")
-        script.timeout(time: 10, unit: 'MINUTES') {
-            while (sonarAnalysisStatus != 'SUCCESS') {
-                if (sonarAnalysisStatus == 'FAILED') {
-                    script.error "[JENKINS][ERROR] Sonar analysis finished with status: \'${sonarAnalysisStatus}\'"
-                }
-                def response = script.httpRequest acceptType: 'APPLICATION_JSON',
-                        url: sonarReportMap.ceTaskUrl,
-                        httpMode: 'GET',
-                        quiet: true
-
-                def content = script.readJSON text: response.content
-                sonarAnalysisStatus = content.task.status
-                script.println("[JENKINS][DEBUG] Current status: " + sonarAnalysisStatus)
-            }
-        }
-
-        script.httpRequest acceptType: 'APPLICATION_JSON',
-                    url: sonarJsonReportLink,
-                    httpMode: 'GET',
-                    outputFile: "${codereviewAnalysisRunDir}/.sonarqube/out/.sonar/sonar-report.json"
-    }
-
-    def sendReport(sonarURL, codereviewAnalysisRunDir) {
-        script.dir("${codereviewAnalysisRunDir}") {
-            script.sonarToGerrit inspectionConfig: [baseConfig: [projectPath: "${codereviewAnalysisRunDir}", sonarReportPath: "${codereviewAnalysisRunDir}/.sonarqube/out/.sonar/sonar-report.json"], serverURL: "${sonarURL}"],
-                    notificationConfig: [commentedIssuesNotificationRecipient: 'NONE', negativeScoreNotificationRecipient: 'NONE'],
-                    reviewConfig: [issueFilterConfig: [newIssuesOnly: false, changedLinesOnly: false, severity: 'CRITICAL']],
-                    scoreConfig: [category: 'Sonar-Verified', noIssuesScore: +1, issuesScore: -1, issueFilterConfig: [severity: 'CRITICAL']]
-        }
-    }
-
-    def sendSonarScan(sonarProjectName, codereviewAnalysisRunDir, buildTool, scannerCommand) {
-        script.dir("${codereviewAnalysisRunDir}") {
-                 script.withSonarQubeEnv('Sonar') {
-                     script.sh """
-                     ${scannerCommand} begin /k:${sonarProjectName} \
-                     /k:${sonarProjectName} \
-                     /n:${sonarProjectName} \
-                     /d:sonar.cs.opencover.reportsPaths=${codereviewAnalysisRunDir}/*Tests*/*.xml
-                     dotnet build ${buildTool.sln_filename}
-                     ${scannerCommand} end
-                 """
-                 }
-        }
-    }
-    def runSonarScannerDependsOnPlatformAndStrategy(context, platform, codereviewAnalysisRunDir, scannerCommand) {
-        if (platform == "kubernetes" || context.codebase.config.strategy == "import") {
-            sendSonarScan(context.codebase.name, codereviewAnalysisRunDir, context.buildTool, scannerCommand)
-        } else {
-            sendSonarScan("${context.codebase.name}:change-${context.git.changeNumber}-${context.git.patchsetNumber}", codereviewAnalysisRunDir, context.buildTool, scannerCommand)
-            getSonarReportJson(context, codereviewAnalysisRunDir)
-            sendReport(context.sonar.route, codereviewAnalysisRunDir)
-        }
-    }
     Script script
 
-    void run(context) {
-        def codereviewAnalysisRunDir = context.workDir
+    def sendSonarScan(workDir, codebaseName, scannerCommand, buildTool) {
         def scannerHomePath = script.tool 'SonarScannerMSBuild'
-        def scannerCommand =  "/home/jenkins/.dotnet/tools/dotnet-sonarscanner"
-        if (context.job.type == "codereview") {
-            runSonarScannerDependsOnPlatformAndStrategy(context, System.getenv("PLATFORM_TYPE"), codereviewAnalysisRunDir, scannerCommand)
-        } else {
-            sendSonarScan(context.codebase.name, codereviewAnalysisRunDir, context.buildTool, scannerCommand)
+        script.dir("${workDir}") {
+            script.withSonarQubeEnv('Sonar') {
+                script.sh """
+                     ${scannerCommand} begin /k:${codebaseName} \
+                     /k:${codebaseName} \
+                     /n:${codebaseName} \
+                     /d:sonar.cs.opencover.reportsPaths=${workDir}/*Tests*/*.xml
+                     dotnet build ${buildTool.sln_filename}
+                     ${scannerCommand} end
+                 """"
+            }
         }
+    }
+
+    def waitForQualityGate() {
         script.timeout(time: 10, unit: 'MINUTES') {
             def qualityGateResult = script.waitForQualityGate()
             if (qualityGateResult.status != 'OK')
                 script.error "[JENKINS][ERROR] Sonar quality gate check has been failed with status " +
                         "${qualityGateResult.status}"
         }
+    }
 
-        if (context.job.type == "build")
+    def waitForSonarAnalysis(ceTaskUrl) {
+        script.println("[JENKINS][DEBUG] Waiting for report from Sonar")
+        script.timeout(time: 10, unit: 'MINUTES') {
+            while (true) {
+                def status = getStatus(ceTaskUrl)
+                script.println("[JENKINS][DEBUG] Current status: ${status}")
+
+                if (status == 'FAILED') {
+                    script.error "[JENKINS][ERROR] Sonar analysis finished with status: \'${status}\'"
+                }
+
+                if (status == 'SUCCESS') {
+                    script.println("[JENKINS][ERROR] Sonar analysis finished with status: ${status}")
+                    break
+                }
+            }
+        }
+    }
+
+    def getStatus(ceTaskUrl) {
+        def response = script.httpRequest acceptType: 'APPLICATION_JSON',
+                url: ceTaskUrl,
+                httpMode: 'GET',
+                quiet: true
+
+        def content = script.readJSON text: response.content
+        return content.task.status
+    }
+
+    def getSonarReportInJson(workDir, url) {
+        script.httpRequest acceptType: 'APPLICATION_JSON',
+                url: url,
+                httpMode: 'GET',
+                outputFile: "${workDir}/.scannerwork/sonar-report.json"
+    }
+
+    def sendStatusToGerrit(workDir, sonarURL) {
+        script.dir("${workDir}") {
+            script.sonarToGerrit inspectionConfig: [baseConfig: [projectPath: "", sonarReportPath: "${workDir}/.scannerwork/sonar-report.json"], serverURL: "${sonarURL}"],
+                    notificationConfig: [commentedIssuesNotificationRecipient: 'NONE', negativeScoreNotificationRecipient: 'NONE'],
+                    reviewConfig: [issueFilterConfig: [newIssuesOnly: false, changedLinesOnly: false, severity: 'CRITICAL']],
+                    scoreConfig: [category: 'Sonar-Verified', noIssuesScore: +1, issuesScore: -1, issueFilterConfig: [severity: 'CRITICAL']]
+        }
+    }
+
+    void run(context) {
+        def scannerCommand =  "/home/jenkins/.dotnet/tools/dotnet-sonarscanner"
+        if (context.job.type == "build") {
             new SonarCleanupApplicationLibrary(script: script).run(context)
+        }
+        if (context.job.type == "codereview" && context.codebase.config.strategy != "import") {
+            sendSonarScan(context.workDir, "${context.codebase.name}:change-${context.git.changeNumber}-${context.git.patchsetNumber}")
+
+            def report = script.readProperties file: "${context.workDir}/.scannerwork/report-task.txt"
+            def ceTaskUrl = report.ceTaskUrl
+            waitForSonarAnalysis(ceTaskUrl)
+
+            def url = "${context.sonar.route}/api/issues/search?componentKeys=${context.codebase.name}:change-${context.git.changeNumber}-${context.git.patchsetNumber}&branch=${context.git.branch}&resolved=false&facets=severities"
+            getSonarReportInJson(context.workDir, url)
+
+            sendStatusToGerrit(context.workDir, context.sonar.route)
+
+            waitForQualityGate()
+            return
+        }
+        sendSonarScan(context.workDir, context.codebase.name)
+        waitForQualityGate()
     }
 }
