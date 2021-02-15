@@ -29,13 +29,9 @@ class SonarMaven {
         def scannerHome = script.tool 'SonarQube Scanner'
         script.dir("${workDir}") {
             script.withSonarQubeEnv('Sonar') {
-                script.withCredentials([script.usernamePassword(credentialsId: "${credentialsId}",
-                        passwordVariable: 'PASSWORD', usernameVariable: 'USERNAME')]) {
-                    script.sh "${buildTool.command} ${buildTool.properties} -Dartifactory.username=${script.USERNAME} -Dartifactory.password=${script.PASSWORD} " +
-                            "sonar:sonar " +
-                            "-Dsonar.projectKey=${codebaseName} " +
-                            "-Dsonar.projectName=${codebaseName} "
-                }
+                script.sh "${scannerHome}/bin/sonar-scanner " +
+                        "-Dsonar.projectKey=${codebaseName} " +
+                        "-Dsonar.projectName=${codebaseName} "
             }
         }
     }
