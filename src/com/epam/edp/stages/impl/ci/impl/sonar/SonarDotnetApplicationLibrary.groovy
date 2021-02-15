@@ -35,7 +35,7 @@ class SonarDotnetApplicationLibrary {
                      /d:sonar.cs.opencover.reportsPaths=${workDir}/*Tests*/*.xml
                      dotnet build ${buildTool.sln_filename}
                      ${scannerCommand} end
-                 """"
+                 """
             }
         }
     }
